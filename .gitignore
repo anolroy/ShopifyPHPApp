@@ -1,0 +1,24 @@
+# Credentials and configuration
+credentials.php
+config.php
+.env
+
+# Logs and temporary files
+*.log
+*.json
+tmp/
+logs/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+credentials2.php
+paymentSettings.php
+updateProduct.php
+shopify_errors.log
+Backup/
+vendor/
+Shopify PHP API.zip   
