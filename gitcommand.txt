@@ -3,7 +3,7 @@ git add .
 git commit -m "Initial commit"
 git branch -M main
 git remote add origin git@github.com:anolroy/shopifyAPPIntegration.git
-git push -u origin main
+git push origin master
 
 # Remove the tracked credentials file from git (but keep it locally)
 git rm --cached credentials.php
