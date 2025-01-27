@@ -2,6 +2,7 @@
 set_time_limit(300);
 include_once 'credentials.php';
 include_once 'getRespose.php';
+$switch = 0;// 0 means SQL MODE and 1 means JSON MODE
 if (isset($_GET['action'])) {
     // Insert order data into database
     // Here in this page we shall handle all returns   
@@ -169,42 +170,48 @@ if (isset($_GET['action'])) {
                                         }
                                     }
                                 }
-                                $sql = "
-                                INSERT INTO Receipt (id, order_id, currency, payment_id,TransactionTypeDesc,SourcePHP,SourceID, created_at, gateway, message, Type, TotalTax, amount, ReceiptDownloaded)
-                                VALUES ('$document_id', '$orderNumberExt', '$currency', '$refund_id', '$TransactionTypeDesc','$SourcePHP','$SourceID','$created_at', '$gateway', '$message', '$TransactionType','$taxAmount', '$TotalOrder', 0)
-                                ";
-                                $stmt = $conn->query($sql);
-                                if (!$stmt) {
-                                    die('Insert failed: ' . $conn->error);
+                                if($switch == 0)
+                                {
+                                    $sql = "
+                                    INSERT INTO Receipt (id, order_id, currency, payment_id,TransactionTypeDesc,SourcePHP,SourceID, created_at, gateway, message, Type, TotalTax, amount, ReceiptDownloaded)
+                                    VALUES ('$document_id', '$orderNumberExt', '$currency', '$refund_id', '$TransactionTypeDesc','$SourcePHP','$SourceID','$created_at', '$gateway', '$message', '$TransactionType','$taxAmount', '$TotalOrder', 0)
+                                    ";
+                                    $stmt = $conn->query($sql);
+                                    if (!$stmt) {
+                                        die('Insert failed: ' . $conn->error);
+                                    }
+                                    echo "Receipt inserted successfully.\n"; 
                                 }
-                                echo "Receipt inserted successfully.\n"; 
-                                // $receiptData = [
-                                //     'id' => $document_id,
-                                //     'order_id' => $orderNumberExt,
-                                //     'currency' => $currency,
-                                //     'payment_id' => $refund_id,
-                                //     'TransactionTypeDesc' => $TransactionTypeDesc,
-                                //     'SourcePHP' => $SourcePHP,
-                                //     'SourceID' => $SourceID,
-                                //     'created_at' => $created_at,
-                                //     'gateway' => $gateway,
-                                //     'message' => $message,
-                                //     'Type' => $TransactionType,
-                                //     'TotalTax' => $taxAmount,
-                                //     'amount' => $TotalOrder,
-                                //     'ReceiptDownloaded' => 0
-                                // ];
+                                else
+                                {
+                                    $receiptData = [
+                                        'id' => $document_id,
+                                        'order_id' => $orderNumberExt,
+                                        'currency' => $currency,
+                                        'payment_id' => $refund_id,
+                                        'TransactionTypeDesc' => $TransactionTypeDesc,
+                                        'SourcePHP' => $SourcePHP,
+                                        'SourceID' => $SourceID,
+                                        'created_at' => $created_at,
+                                        'gateway' => $gateway,
+                                        'message' => $message,
+                                        'Type' => $TransactionType,
+                                        'TotalTax' => $taxAmount,
+                                        'amount' => $TotalOrder,
+                                        'ReceiptDownloaded' => 0
+                                    ];
 
-                                // $existingData = [];
-                                // if (file_exists('1receipt.json')) {
-                                //     $existingJson = file_get_contents('1receipt.json');
-                                //     $existingData = json_decode($existingJson, true);
-                                //     if (!is_array($existingData)) {
-                                //         $existingData = [$existingData];
-                                //     }
-                                // }
-                                // $existingData[] = $receiptData;
-                                // file_put_contents('1receipt.json', json_encode($existingData, JSON_PRETTY_PRINT));
+                                    $existingData = [];
+                                    if (file_exists('1receipt.json')) {
+                                        $existingJson = file_get_contents('1receipt.json');
+                                        $existingData = json_decode($existingJson, true);
+                                        if (!is_array($existingData)) {
+                                            $existingData = [$existingData];
+                                        }
+                                    }
+                                    $existingData[] = $receiptData;
+                                    file_put_contents('1receipt.json', json_encode($existingData, JSON_PRETTY_PRINT));}
+                                
                             }
                         }
                         $taxAmount = 0;
@@ -274,6 +281,12 @@ if (isset($_GET['action'])) {
                                 }
                             }
 
+                            // Calculate Unit Tax Value
+                            $unitTaxValue = $tax_lines / $refundProdQty;
+
+                            // Calculate Unit Price After Discount
+                            $UnitPriceAfterDiscount = $price - $LineDiscountTotal;
+
                             //$Ttotal_tax=$Ttotal_tax + $tax_lines;
                             //$i=$order_data['discount_applications'][$index]; 
                             //1.Return line theke order line e aste hobe. means product khuje ber korte hobe
@@ -321,57 +334,70 @@ if (isset($_GET['action'])) {
 
                             $OrderHeaderId = $refund['id'];
                             $uniqueID = $refund['id'] . $LineNumber;
-                            $sql = "INSERT INTO orderdetails (uniqueID,orderheaderID,TransactionType,TransactionTypeDesc,ReturnReason,orderdetailsID,ordernumber,taxable,tax_lines,productid,Description,stockcode,
-                            UnitNettPrice, Quantitysold,LineDiscountValue,target_type,type,value, value_type,allocation_method,target_selection,fulfilledqty)
-                            VALUES ('$uniqueID','$OrderHeaderId','$TransactionType','$TransactionTypeDesc','$returnReason','$LineNumber','$orderNumber','$taxable','$tax_lines','$Product_id' , '$name', '$sku','$price',
-                            '$refundProdQty','$LineDiscountTotal','$discount_target_type', '$discount_type' ,'$discount_value','$discount_value_type','$discount_allocation_method','$discount_target_selection','0')";
-                            if ($conn->query($sql) === TRUE) {
-                                echo "Line item record inserted successfully.<br>";
-                            } else {
-                                echo "Error inserting line item record(orderdetails): " . $conn->error . "<br>";
-                                $logFile = __DIR__ . '/shopify_errors.log';  // Log file in the same directory as the script                
-                                $currentDateTime = date('Y-m-d H:i:s');      // Get current date and time
-                                $errorMessage = "[$currentDateTime] Error: ". $conn->connect_error ;            
-                                // Write the error message to the log file
-                                file_put_contents($logFile, $errorMessage, FILE_APPEND);               
-                                die('Error inserting line item record: ' . $conn->error);
-                            }    
-                            // $orderDetails = [
-                            //     'uniqueID' => $uniqueID,
-                            //     'orderheaderID' => $OrderHeaderId,
-                            //     'TransactionType' => $TransactionType,
-                            //     'TransactionTypeDesc' => $TransactionTypeDesc,
-                            //     'ReturnReason' => $returnReason,
-                            //     'orderdetailsID' => $LineNumber,
-                            //     'ordernumber' => $orderNumber,
-                            //     'taxable' => $taxable,
-                            //     'LineDiscountValue' => $LineDiscountTotal,
-                            //     'tax_lines' => $tax_lines,
-                            //     'productid' => $Product_id,
-                            //     'Description' => $name,
-                            //     'stockcode' => $sku,
-                            //     'UnitNettPrice' => $price,
-                            //     'Quantitysold' => $refundProdQty,
-                            //     'target_type' => $discount_target_type,
-                            //     'type' => $discount_type,
-                            //     'value' => $discount_value,
-                            //     'value_type' => $discount_value_type,
-                            //     'allocation_method' => $discount_allocation_method,
-                            //     'target_selection' => $discount_target_selection,
-                            //     'fulfilledqty' => '0'
-                            // ];
+                            if($switch == 0)
+                            {
+                                $sql = "INSERT INTO orderdetails (
+                                    uniqueID, orderheaderID, TransactionType, TransactionTypeDesc, ReturnReason, orderdetailsID, ordernumber, taxable, tax_lines, productid, Description, stockcode,
+                                    UnitNettPrice, Quantitysold, LineDiscountValue, target_type, type, value, value_type, allocation_method, target_selection, fulfilledqty, UnitTaxValue, UnitPriceAfterDiscount
+                                ) VALUES (
+                                    '$uniqueID', '$OrderHeaderId', '$TransactionType', '$TransactionTypeDesc', '$returnReason', '$LineNumber', '$orderNumber', '$taxable', '$tax_lines', '$Product_id', '$name', '$sku',
+                                    '$price', '$refundProdQty', '$LineDiscountTotal', '$discount_target_type', '$discount_type', '$discount_value', '$discount_value_type', '$discount_allocation_method', '$discount_target_selection', '0', '$unitTaxValue', '$UnitPriceAfterDiscount'
+                                )";
+                                $stmt = $conn->query($sql);
+                                if ($stmt) {
+                                    echo "Line item record inserted successfully.<br>";
+                                } else {
+                                    echo "Error inserting line item record(orderdetails): " . $conn->error . "<br>";
+                                    $logFile = __DIR__ . '/shopify_errors.log';  // Log file in the same directory as the script                
+                                    $currentDateTime = date('Y-m-d H:i:s');      // Get current date and time
+                                    $errorMessage = "[$currentDateTime] Error: ". $conn->connect_error ;            
+                                    // Write the error message to the log file
+                                    file_put_contents($logFile, $errorMessage, FILE_APPEND);               
+                                    die('Error inserting line item record: ' . $conn->error);
+                                }  
+                            }
+                            else
+                            {
+                                $orderDetails = [
+                                'uniqueID' => $uniqueID,
+                                'orderheaderID' => $OrderHeaderId,
+                                'TransactionType' => $TransactionType,
+                                'TransactionTypeDesc' => $TransactionTypeDesc,
+                                'ReturnReason' => $returnReason,
+                                'orderdetailsID' => $LineNumber,
+                                'ordernumber' => $orderNumber,
+                                'taxable' => $taxable,
+                                'LineDiscountValue' => $LineDiscountTotal,
+                                'tax_lines' => $tax_lines,
+                                'productid' => $Product_id,
+                                'Description' => $name,
+                                'stockcode' => $sku,
+                                'UnitNettPrice' => $price,
+                                'Quantitysold' => $refundProdQty,
+                                'target_type' => $discount_target_type,
+                                'type' => $discount_type,
+                                'value' => $discount_value,
+                                'value_type' => $discount_value_type,
+                                'allocation_method' => $discount_allocation_method,
+                                'target_selection' => $discount_target_selection,
+                                'fulfilledqty' => '0',
+                                'UnitTaxValue' => $unitTaxValue,
+                                'UnitPriceAfterDiscount' => $UnitPriceAfterDiscount
+                            ];
 
-                            // // Read existing content
-                            // $existingContent = file_exists('2orderdetails.json') ? json_decode(file_get_contents('2orderdetails.json'), true) : [];
-                            // if (!is_array($existingContent)) {
-                            //     $existingContent = [];
-                            // }
+                            // Read existing content
+                            $existingContent = file_exists('2orderdetails.json') ? json_decode(file_get_contents('2orderdetails.json'), true) : [];
+                            if (!is_array($existingContent)) {
+                                $existingContent = [];
+                            }
 
-                            // // Append new data
-                            // $existingContent[] = $orderDetails;
+                            // Append new data
+                            $existingContent[] = $orderDetails;
 
-                            // // Write back to file
-                            // file_put_contents('2orderdetails.json', json_encode($existingContent, JSON_PRETTY_PRINT));
+                            // Write back to file
+                            file_put_contents('2orderdetails.json', json_encode($existingContent, JSON_PRETTY_PRINT));
+                            } 
+                            
                             $LineNumber = $LineNumber + 1;
                         }
                     }
@@ -416,33 +442,38 @@ if (isset($_GET['action'])) {
                                 $Description = $shippingLine['reason'];
                                 $shipping_tax = ($shippingLine['tax_amount']);
                                 $TransactionType = 2;
+                                if($switch == 0)
+                                    { $sql = "Delete from  Shippingdetails where ShippingChargeID='$ShippingChargeID'";
+                                        $result = $conn->query($sql);
+                                        $sql = "INSERT INTO Shippingdetails (ShippingChargeID ,OrderHeaderId , OrderNumber ,TransactionType ,Description, ChargeAmount, TaxAmount)
+                                                    VALUES ('$ShippingChargeID' ,'$OrderHeaderId' ,'$orderNumber' ,'$TransactionType' ,'$Description', '$shippingCharge', '$shipping_tax')";
+                                        $result = $conn->query($sql);
+                                    }
+                                else
+                                    { 
+                                        $shippingData = array(
+                                            'ShippingChargeID' => $ShippingChargeID,
+                                            'OrderHeaderId' => $OrderHeaderId,
+                                            'OrderNumber' => $orderNumber,
+                                            'TransactionType' => $TransactionType,
+                                            'Description' => $Description,
+                                            'ChargeAmount' => $ChargeAmount,
+                                            'TaxAmount' => $shipping_tax
+                                        );
 
-                                $sql = "Delete from  Shippingdetails where ShippingChargeID='$ShippingChargeID'";
-                                $result = $conn->query($sql);
-                                $sql = "INSERT INTO Shippingdetails (ShippingChargeID ,OrderHeaderId , OrderNumber ,TransactionType ,Description, ChargeAmount, TaxAmount)
-                                            VALUES ('$ShippingChargeID' ,'$OrderHeaderId' ,'$orderNumber' ,'$TransactionType' ,'$Description', '$shippingCharge', '$shipping_tax')";
-                                $result = $conn->query($sql);
-                                // $shippingData = array(
-                                //     'ShippingChargeID' => $ShippingChargeID,
-                                //     'OrderHeaderId' => $OrderHeaderId,
-                                //     'OrderNumber' => $orderNumber,
-                                //     'TransactionType' => $TransactionType,
-                                //     'Description' => $Description,
-                                //     'ChargeAmount' => $ChargeAmount,
-                                //     'TaxAmount' => $shipping_tax
-                                // );
+                                        // Read existing content if file exists
+                                        $existingContent = [];
+                                        if (file_exists('1shiping.json')) {
+                                            $existingContent = json_decode(file_get_contents('1shiping.json'), true);
+                                        }
 
-                                // // Read existing content if file exists
-                                // $existingContent = [];
-                                // if (file_exists('1shiping.json')) {
-                                //     $existingContent = json_decode(file_get_contents('1shiping.json'), true);
-                                // }
+                                        // Add new shipping data
+                                        $existingContent[] = $shippingData;
 
-                                // // Add new shipping data
-                                // $existingContent[] = $shippingData;
-
-                                // // Write back to file
-                                // file_put_contents('1shiping.json', json_encode($existingContent, JSON_PRETTY_PRINT));
+                                        // Write back to file
+                                        file_put_contents('1shiping.json', json_encode($existingContent, JSON_PRETTY_PRINT));
+                                    }
+                               
                             }
                         }
                     }
@@ -456,6 +487,8 @@ if (isset($_GET['action'])) {
             if ($hasRefundLineItems == true)
                 {
                  $TransactionType = 2;  
+                 if($switch == 0)
+                 {
                 //end setting refund adjustment transactions // setting  shipping adjustment transactions  20250109  
                    $sql = "INSERT INTO orderheaders (OrderHeaderId,OrderNumber, OrderDate, CurrencyCode, OrderGrossTotal, CreationDateTime, 
                    lastModifiedDateTime, transactionType,TransactionTypeDesc,orderamount,total_tax,OrderDiscount,sourcePHP,Code,Amount, Type, target_type, value, allocation_method, 
@@ -472,46 +505,50 @@ if (isset($_GET['action'])) {
                     {
                         echo "Line item record inserted successfully.<br>"; 
                     }    
-                // $orderHeaderData = array(
-                //     'OrderHeaderId' => $OrderHeaderId,
-                //     'OrderNumber' => $orderNumber,
-                //     'OrderDate' => $orderDate,
-                //     'CurrencyCode' => $currency,
-                //     'OrderGrossTotal' => $GrossAmount,
-                //     'CreationDateTime' => $creationDateTime,
-                //     'lastModifiedDateTime' => $creationDateTime,
-                //     'transactionType' => $TransactionType,
-                //     'TransactionTypeDesc' => $TransactionTypeDesc,
-                //     'orderamount' => $OrderAmount,
-                //     'total_tax' => $Ttotal_tax,
-                //     'OrderDiscount' => $HeaderDiscountTotal,
-                //     'sourcePHP' => $SourcePHP,
-                //     'Code' => $discount_code,
-                //     'Amount' => $discount_amount,
-                //     'Type' => $discount_type,
-                //     'target_type' => $discount_target_type,
-                //     'value' => $discount_value,
-                //     'allocation_method' => $discount_allocation_method,
-                //     'target_selection' => $discount_target_selection,
-                //     'shippingCharge' => $shippingCharge,
-                //     'shipping_tax' => $shipping_tax
-                // );
+                 }
+                 else
+                 {
+                        $orderHeaderData = array(
+                        'OrderHeaderId' => $OrderHeaderId,
+                        'OrderNumber' => $orderNumber,
+                        'OrderDate' => $orderDate,
+                        'CurrencyCode' => $currency,
+                        'OrderGrossTotal' => $GrossAmount,
+                        'CreationDateTime' => $creationDateTime,
+                        'lastModifiedDateTime' => $creationDateTime,
+                        'transactionType' => $TransactionType,
+                        'TransactionTypeDesc' => $TransactionTypeDesc,
+                        'orderamount' => $OrderAmount,
+                        'total_tax' => $Ttotal_tax,
+                        'OrderDiscount' => $HeaderDiscountTotal,
+                        'sourcePHP' => $SourcePHP,
+                        'Code' => $discount_code,
+                        'Amount' => $discount_amount,
+                        'Type' => $discount_type,
+                        'target_type' => $discount_target_type,
+                        'value' => $discount_value,
+                        'allocation_method' => $discount_allocation_method,
+                        'target_selection' => $discount_target_selection,
+                        'shippingCharge' => $shippingCharge,
+                        'shipping_tax' => $shipping_tax
+                        );
 
-                // // Read existing data
-                // $existingData = [];
-                // if (file_exists('1orderheaders.json')) {
-                //     $jsonContent = file_get_contents('1orderheaders.json');
-                //     if (!empty($jsonContent)) {
-                //         $existingData = json_decode($jsonContent, true);
-                //     }
-                // }
+                        // Read existing data
+                        $existingData = [];
+                        if (file_exists('1orderheaders.json')) {
+                            $jsonContent = file_get_contents('1orderheaders.json');
+                            if (!empty($jsonContent)) {
+                                $existingData = json_decode($jsonContent, true);
+                            }
+                        }
 
-                // // Append new data
-                // $existingData[] = $orderHeaderData;
+                        // Append new data
+                        $existingData[] = $orderHeaderData;
 
-                // // Write back to file
-                // $jsonData = json_encode($existingData, JSON_PRETTY_PRINT);
-                // file_put_contents('1orderheaders.json', $jsonData);
+                        // Write back to file
+                        $jsonData = json_encode($existingData, JSON_PRETTY_PRINT);
+                        file_put_contents('1orderheaders.json', $jsonData);
+                    }   
             }
         }
     }

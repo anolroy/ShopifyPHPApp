@@ -2,10 +2,14 @@
     include_once 'credentials.php';
     include_once 'getRespose.php';
     
-if (isset(($_GET['action'])))
+    $switch = 0; // 0 means SQL MODE and 1 means JSON MODE
+
+    if (isset($_GET['action']))
    {        
     // Insert order data into database
         $order_id = $order_data['id'];
+        $idhook = $order_data['id'];
+        $dateCalled = date('Y-m-d H:i:s'); 
         $created_at = $order_data['created_at'];
         $currency = $order_data['currency'];
         $current_subtotal_price = $order_data['current_subtotal_price'];
@@ -144,6 +148,22 @@ if (isset(($_GET['action'])))
                 die("Connection failed: " . $conn->connect_error);
             } 
 
+
+            $module = 'Sales Order'; // Module name
+            // Prepare the SQL statement
+            // we do not need Order Update in 'Order Update' because this document modifies several time and allowed to come multiple times
+            //1030-R1 in one orderupdate 1030 -R2 in orderupdate. where theier Id is same. so we cannot check duplicate on document id
+        
+            $sql = "INSERT INTO hooklog (id, module, datecalled) VALUES (?, ?, ?)";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("sss", $idhook, $module, $dateCalled);
+            if ($stmt->execute()) {
+                echo "Record inserted successfully..<br>";
+            } else {
+                echo "Error: " . $stmt->error;
+            }
+            $stmt->close();
+
                if (isset($order_data['shipping_lines'])) 
                {
                     foreach ($order_data['shipping_lines'] as $shippingLine) 
@@ -161,9 +181,33 @@ if (isset(($_GET['action'])))
                                 if (isset($taxLine['price'])) {
                                     //echo "Tax Price: " . $taxLine['price'] . "\n";
                                         $shipping_tax=$shipping_tax+ $taxLine['price'];                                                                        
-                                        $sql = "INSERT INTO Shippingdetails (ShippingChargeID ,OrderHeaderId , OrderNumber ,TransactionType ,Description, ChargeAmount, TaxAmount)
-                                        VALUES ('$ShippingChargeID' ,'$OrderHeaderId' ,'$orderNumber' ,'$TransactionType' ,'$Description', '$ChargeAmount', '$shipping_tax')";
-                                        $result = $conn->query($sql);
+                                        if ($switch == 0) {
+                                            $sql = "INSERT INTO Shippingdetails (ShippingChargeID ,OrderHeaderId , OrderNumber ,TransactionType ,Description, ChargeAmount, TaxAmount)
+                                            VALUES ('$ShippingChargeID' ,'$OrderHeaderId' ,'$orderNumber' ,'$TransactionType' ,'$Description', '$ChargeAmount', '$shipping_tax')";
+                                            $result = $conn->query($sql);
+                                        } else {
+                                            $shippingData = array(
+                                                'ShippingChargeID' => $ShippingChargeID,
+                                                'OrderHeaderId' => $OrderHeaderId,
+                                                'OrderNumber' => $orderNumber,
+                                                'TransactionType' => $TransactionType,
+                                                'Description' => $Description,
+                                                'ChargeAmount' => $ChargeAmount,
+                                                'TaxAmount' => $shipping_tax
+                                            );
+
+                                            // Read existing content if file exists
+                                            $existingContent = [];
+                                            if (file_exists('1shippingDetails.json')) {
+                                                $existingContent = json_decode(file_get_contents('1shippingDetails.json'), true);
+                                            }
+
+                                            // Add new shipping data
+                                            $existingContent[] = $shippingData;
+
+                                            // Write back to file
+                                            file_put_contents('1shippingDetails.json', json_encode($existingContent, JSON_PRETTY_PRINT));
+                                        }
                                 }
                             }
                         }
@@ -196,8 +240,8 @@ if (isset(($_GET['action'])))
             $stmt->store_result();
             
             
-            // If order exists, skip insertion
-            if ($stmt->num_rows > 0) {
+            // If order exists, skip insertion // 0 means SQL MODE and 1 means JSON MODE
+            if ($switch == 0 && $stmt->num_rows > 0) {
                 echo "Duplicate order received. Skipping insertion for Order ID: " . $orderNumber;
                 $stmt->close();
             } else {
@@ -212,21 +256,77 @@ if (isset(($_GET['action'])))
             $transactionType=1;
             $transactionTypeDesc="Sales Order";   
             $orderGrossTotal= $orderamount+ $shippingCharge+ $shipping_tax;    
-            $sql = "INSERT INTO orderheaders (
-                OrderHeaderId, OrderNumber, OrderDate, DeliveryDateEarliest,TransactionType,transactionTypeDesc,InvoiceName, company,DeliveryName,InvoiceAddress1, EmailAddress, CurrencyCode, OrderGrossTotal, Comments,
-                CreationDateTime, lastModifiedDateTime, PaymentMethod, fulfilled,  financial_status,  orderamount, OrderDiscount,shippingCharge,
-                Code, Amount, Type, target_type, value, allocation_method, target_selection, total_tax,InvoiceAddress2,InvoiceAddress3, 
-                InvoiceAddress4, InvoicePostcode, DeliveryAddress1, DeliveryAddress2, DeliveryAddress3, DeliveryAddress4, DeliveryAddress5,DeliveryPostcode, DeliveryTelephone_number,shipping_tax,sourcePHP                   
-            ) VALUES ('$OrderHeaderId', '$orderNumber', '$orderDate', '$deliveryDateEarliest', '$transactionType','$transactionTypeDesc','$InvoiceName',' $company','$DeliveryName', '$invoiceAddress1','$emailAddress', '$currencyCode', '$orderGrossTotal', '$comments', 
-                '$creationDateTime', '$updated_at', '$paymentMethod', '$fulfillment_status', '$financial_status', '$orderamount', '$OrderDiscount', '$shippingCharge', 
-                '$discount_code', '$discount_amount', '$discount_type','$discount_target_type', '$discount_value',' $discount_allocation_method', '$discount_target_selection','$total_tax','$invoiceAddress2','$invoiceAddress3', 
-                '$invoiceAddress4', '$invoicePostcode', '$DeliveryAddress1', '$DeliveryAddress2', '$DeliveryAddress3', '$DeliveryAddress4', '$DeliveryAddress5','$DeliveryPostcode','$DeliveryTelephone_number','$shipping_tax','$sourcePHP' )";
-            $result = $conn->query($sql);
-            // $sql = "Update Receipt set order_id=$orderNumber  where isNull(order_id)";
-            // $result = $conn->query($sql);
-            //update this receipt orderHeaderID from the json file  receipt.json  
-            // Close the statement and the connection
-            $stmt->close();
+            if ($switch == 0) {
+                $sql = "INSERT INTO orderheaders (
+                    OrderHeaderId, OrderNumber, OrderDate, DeliveryDateEarliest,TransactionType,transactionTypeDesc,InvoiceName, company,DeliveryName,InvoiceAddress1, EmailAddress, CurrencyCode, OrderGrossTotal, Comments,
+                    CreationDateTime, lastModifiedDateTime, PaymentMethod, fulfilled,  financial_status,  orderamount, OrderDiscount,shippingCharge,
+                    Code, Amount, Type, target_type, value, allocation_method, target_selection, total_tax,InvoiceAddress2,InvoiceAddress3, 
+                    InvoiceAddress4, InvoicePostcode, DeliveryAddress1, DeliveryAddress2, DeliveryAddress3, DeliveryAddress4, DeliveryAddress5,DeliveryPostcode, DeliveryTelephone_number,shipping_tax,sourcePHP                   
+                ) VALUES ('$OrderHeaderId', '$orderNumber', '$orderDate', '$deliveryDateEarliest', '$transactionType','$transactionTypeDesc','$InvoiceName',' $company','$DeliveryName', '$invoiceAddress1','$emailAddress', '$currencyCode', '$orderGrossTotal', '$comments', 
+                    '$creationDateTime', '$updated_at', '$paymentMethod', '$fulfillment_status', '$financial_status', '$orderamount', '$OrderDiscount', '$shippingCharge', 
+                    '$discount_code', '$discount_amount', '$discount_type','$discount_target_type', '$discount_value',' $discount_allocation_method', '$discount_target_selection','$total_tax','$invoiceAddress2','$invoiceAddress3', 
+                    '$invoiceAddress4', '$invoicePostcode', '$DeliveryAddress1', '$DeliveryAddress2', '$DeliveryAddress3', '$DeliveryAddress4', '$DeliveryAddress5','$DeliveryPostcode','$DeliveryTelephone_number','$shipping_tax','$sourcePHP' )";
+                $result = $conn->query($sql);
+                $stmt->close();
+            } else {
+                $orderHeaderData = array(
+                    'OrderHeaderId' => $OrderHeaderId,
+                    'OrderNumber' => $orderNumber,
+                    'OrderDate' => $orderDate,
+                    'DeliveryDateEarliest' => $deliveryDateEarliest,
+                    'TransactionType' => $transactionType,
+                    'transactionTypeDesc' => $transactionTypeDesc,
+                    'InvoiceName' => $InvoiceName,
+                    'company' => $company,
+                    'DeliveryName' => $DeliveryName,
+                    'InvoiceAddress1' => $invoiceAddress1,
+                    'EmailAddress' => $emailAddress,
+                    'CurrencyCode' => $currencyCode,
+                    'OrderGrossTotal' => $orderGrossTotal,
+                    'Comments' => $comments,
+                    'CreationDateTime' => $creationDateTime,
+                    'lastModifiedDateTime' => $updated_at,
+                    'PaymentMethod' => $paymentMethod,
+                    'fulfilled' => $fulfillment_status,
+                    'financial_status' => $financial_status,
+                    'orderamount' => $orderamount,
+                    'OrderDiscount' => $OrderDiscount,
+                    'shippingCharge' => $shippingCharge,
+                    'Code' => $discount_code,
+                    'Amount' => $discount_amount,
+                    'Type' => $discount_type,
+                    'target_type' => $discount_target_type,
+                    'value' => $discount_value,
+                    'allocation_method' => $discount_allocation_method,
+                    'target_selection' => $discount_target_selection,
+                    'total_tax' => $total_tax,
+                    'InvoiceAddress2' => $invoiceAddress2,
+                    'InvoiceAddress3' => $invoiceAddress3,
+                    'InvoiceAddress4' => $invoiceAddress4,
+                    'InvoicePostcode' => $invoicePostcode,
+                    'DeliveryAddress1' => $DeliveryAddress1,
+                    'DeliveryAddress2' => $DeliveryAddress2,
+                    'DeliveryAddress3' => $DeliveryAddress3,
+                    'DeliveryAddress4' => $DeliveryAddress4,
+                    'DeliveryAddress5' => $DeliveryAddress5,
+                    'DeliveryPostcode' => $DeliveryPostcode,
+                    'DeliveryTelephone_number' => $DeliveryTelephone_number,
+                    'shipping_tax' => $shipping_tax,
+                    'sourcePHP' => $sourcePHP
+                );
+
+                // Read existing content if file exists
+                $existingContent = [];
+                if (file_exists('1Orderheader.json')) {
+                    $existingContent = json_decode(file_get_contents('1Orderheader.json'), true);
+                }
+
+                // Add new order header data
+                $existingContent[] = $orderHeaderData;
+
+                // Write back to file
+                file_put_contents('1Orderheader.json', json_encode($existingContent, JSON_PRETTY_PRINT));
+            }
             $index = null;                                
             $discount_application = null;                              
             $discount_target_type = null;
@@ -262,6 +362,9 @@ if (isset(($_GET['action'])))
                 } 
             }
 
+            // Calculate Unit Tax Value
+            $unitTaxValue = $tax_line_price / $current_quantity;
+
             // Check if discounts exist for this line item
             if (!empty($line_item['discount_allocations'])) {
                 foreach ($line_item['discount_allocations'] as $allocation) {
@@ -284,24 +387,68 @@ if (isset(($_GET['action'])))
                 }
             }
             $uniqueID=$line_item['id'];
-            
-            $sql = "INSERT INTO orderdetails (uniqueID,
-            orderheaderID,orderdetailsID,ordernumber,TransactionType,transactionTypeDesc, productid,Description,stockcode,UnitNettPrice, Quantitysold,FulfilledQty,taxable,target_type,type,value,
-            value_type,allocation_method,target_selection,LineDiscountValue,tax_lines)
-            VALUES ('$uniqueID','$OrderHeaderId','$LineNumber','$orderNumber','$transactionType','$transactionTypeDesc','$line_item_id','$name','$sku','$price','$current_quantity','0','$taxable',
-            '$discount_target_type', '$discount_type' ,'$discount_value','$discount_value_type','$discount_allocation_method','$discount_target_selection','$total_discount','$tax_line_price')";
-            $LineNumber=$LineNumber+1;
-            if ($conn->query($sql) === TRUE) {
-                echo "Line item record inserted successfully.<br>";
+            $UnitPriceAfterDiscount=$price-$total_discount;
+            if ($switch == 0) {
+                $sql = "INSERT INTO orderdetails (
+                    uniqueID, orderheaderID, orderdetailsID, ordernumber, TransactionType, transactionTypeDesc, productid, Description, stockcode, UnitNettPrice, Quantitysold, FulfilledQty, taxable, target_type, type, value,
+                    value_type, allocation_method, target_selection, LineDiscountValue, tax_lines, UnitPriceAfterDiscount, UnitTaxValue
+                ) VALUES (
+                    '$uniqueID', '$OrderHeaderId', '$LineNumber', '$orderNumber', '$transactionType', '$transactionTypeDesc', '$line_item_id', '$name', '$sku', '$price', '$current_quantity', '0', '$taxable',
+                    '$discount_target_type', '$discount_type', '$discount_value', '$discount_value_type', '$discount_allocation_method', '$discount_target_selection', '$total_discount', '$tax_line_price',
+                    '$UnitPriceAfterDiscount', '$unitTaxValue'
+                )";
+               
+                if ($conn->query($sql) === TRUE) {
+                    echo "Line item record inserted successfully.<br>";
+                } else {
+                    echo "Error inserting line item record: " . $conn->error . "<br>";
+                    $logFile = __DIR__ . '/shopify_errors.log';  // Log file in the same directory as the script                
+                    $currentDateTime = date('Y-m-d H:i:s');      // Get current date and time
+                    $errorMessage = "[$currentDateTime] Error: ". $conn->connect_error ;            
+                    // Write the error message to the log file
+                    file_put_contents($logFile, $errorMessage, FILE_APPEND);               
+                    die('Error inserting line item record: ' . $conn->error);
+                }
             } else {
-                echo "Error inserting line item record: " . $conn->error . "<br>";
-                $logFile = __DIR__ . '/shopify_errors.log';  // Log file in the same directory as the script                
-                $currentDateTime = date('Y-m-d H:i:s');      // Get current date and time
-                $errorMessage = "[$currentDateTime] Error: ". $conn->connect_error ;            
-                // Write the error message to the log file
-                file_put_contents($logFile, $errorMessage, FILE_APPEND);               
-                die('Error inserting line item record: ' . $conn->error);
+                $orderDetails = array(
+                    'uniqueID' => $uniqueID,
+                    'orderheaderID' => $OrderHeaderId,
+                    'orderdetailsID' => $LineNumber,
+                    'ordernumber' => $orderNumber,
+                    'TransactionType' => $transactionType,
+                    'transactionTypeDesc' => $transactionTypeDesc,
+                    'productid' => $line_item_id,
+                    'Description' => $name,
+                    'stockcode' => $sku,
+                    'UnitNettPrice' => $price,
+                    'Quantitysold' => $current_quantity,
+                    'FulfilledQty' => 0,
+                    'taxable' => $taxable,
+                    'target_type' => $discount_target_type,
+                    'type' => $discount_type,
+                    'value' => $discount_value,
+                    'value_type' => $discount_value_type,
+                    'allocation_method' => $discount_allocation_method,
+                    'target_selection' => $discount_target_selection,
+                    'LineDiscountValue' => $total_discount,
+                    'tax_lines' => $tax_line_price,
+                    'UnitPriceAfterDiscount' => $UnitPriceAfterDiscount,
+                    'UnitTaxValue' => $unitTaxValue
+                );
+
+                // Read existing content if file exists
+                $existingContent = [];
+                if (file_exists('1orderdetails.json')) {
+                    $existingContent = json_decode(file_get_contents('1Order.json'), true);
+                }
+
+                // Add new order details
+                $existingContent[] = $orderDetails;
+
+                // Write back to file
+                file_put_contents('1orderdetails.json', json_encode($existingContent, JSON_PRETTY_PRINT));
             }
+            $LineNumber=$LineNumber+1;
         }     
         }
     }
