@@ -30,7 +30,10 @@ switch ($action) {
         break;
     case 'connection':
         require_once 'connection.php';
-        break;        
+        break;
+    case 'deleteproduct':
+        require_once 'deleteproduct.php';
+        break;               
     default:
        // include_once 'getRespose.php';
         echo "Error: Invalid action specified.";

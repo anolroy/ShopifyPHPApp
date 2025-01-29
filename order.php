@@ -342,7 +342,15 @@
             $current_quantity = $line_item['current_quantity'];
             $name = $line_item['name'];
             $price = $line_item['price'];
+            // Check if $price is null and make it zero
+            if (is_null($price)) {
+                $price = 0;
+            }
             $total_discount = $line_item['total_discount'];
+            // Check if $total_discount is null and make it zero
+            if (is_null($total_discount)) {
+                $total_discount = 0;
+            }
             $variant_id = $line_item['variant_id'];
             $vendor = $line_item['vendor'];
             $sku=$order_data['line_items'][$LineNumber-1]['sku'];
@@ -387,7 +395,7 @@
                 }
             }
             $uniqueID=$line_item['id'];
-            $UnitPriceAfterDiscount=$price-$total_discount;
+            $UnitPriceAfterDiscount=$price-$total_discount;           
             if ($switch == 0) {
                 $sql = "INSERT INTO orderdetails (
                     uniqueID, orderheaderID, orderdetailsID, ordernumber, TransactionType, transactionTypeDesc, productid, Description, stockcode, UnitNettPrice, Quantitysold, FulfilledQty, taxable, target_type, type, value,
